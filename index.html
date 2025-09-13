@@ -3,10 +3,12 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>RETROKILL: ULTRA ENHANCED</title>
+    <title>RETROKILL: Remastered</title>
     <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <style>
-         * { margin: 0; padding: 0; box-sizing: border-box; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         html,body { height:100%; overflow: hidden; font-family: 'VT323', monospace; }
         body {
             background-color: #000;
@@ -21,7 +23,7 @@
             overflow: hidden;
         }
 
-        /* New CRT effect */
+        /* CRT effect */
         .crt::before {
             content: " ";
             display: block;
@@ -714,6 +716,7 @@
             justify-content: space-between;
             margin-top: 20px;
         }
+        
         /* Custom cursor for main menu */
         body.menu-mode {
             cursor: auto;
@@ -743,6 +746,7 @@
             transform: translate(-50%, -50%);
             display: none;
         }
+        
         .game-code-display {
             text-align: center;
             margin: 15px 0;
@@ -766,7 +770,8 @@
             z-index: 25;
             color: #fff;
         }
-    /* Modifiers panel */
+        
+        /* Modifiers panel */
         #modifiers-panel {
             position: absolute;
             top: 0;
@@ -836,6 +841,7 @@
             justify-content: space-between;
             margin-top: 20px;
         }
+        
         .stage-text {
             font-size: 48px;
             color: #ff003c;
@@ -918,6 +924,69 @@
             from { transform: scale(1); }
             to { transform: scale(0.8); }
         }
+        
+        /* Multiplayer Player List */
+        #multiplayer-player-list {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid #ff003c;
+            border-radius: 5px;
+            padding: 10px;
+            z-index: 15;
+            max-width: 250px;
+            width: 100%;
+            display: none;
+        }
+
+        .player-list-title {
+            color: #ff003c;
+            font-size: 18px;
+            margin-bottom: 10px;
+            text-align: center;
+            text-shadow: 1px 1px 0 #000;
+            border-bottom: 1px solid #ff003c;
+            padding-bottom: 5px;
+        }
+
+        .multiplayer-player-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 5px;
+            margin: 5px 0;
+            background: rgba(255, 0, 60, 0.1);
+            border: 1px solid #ff003c;
+            border-radius: 3px;
+        }
+
+        .player-info {
+            display: flex;
+            align-items: center;
+        }
+
+        .player-status {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .player-status.alive {
+            background-color: #00ff00;
+            box-shadow: 0 0 5px #00ff00;
+        }
+
+        .player-status.dead {
+            background-color: #ff003c;
+            box-shadow: 0 0 5px #ff003c;
+        }
+
+        .player-stats {
+            font-size: 12px;
+            color: #cccccc;
+        }
     </style>
 </head>
 <body class="crt">
@@ -925,7 +994,7 @@
     <div class="cursor-dot"></div>
 
     <div id="loading-screen">
-        <div class="loading-text">LOADING RETROKILL: ULTRA ENHANCED</div>
+        <div class="loading-text">LOADING RETROKILL: REMASTERED</div>
         <div class="progress-bar">
             <div class="progress-fill" id="progress-fill"></div>
         </div>
@@ -1035,6 +1104,11 @@
             <div class="ability" id="convert-ability">CONVERT<br>[F]</div>
         </div>
 
+        <div id="multiplayer-player-list">
+            <div class="player-list-title">PLAYERS</div>
+            <div id="players-container"></div>
+        </div>
+
         <div id="game-over">
             <h2 style="color:#ff003c; font-size: 36px; text-shadow: 2px 2px 0 #000;">YOU DIED</h2>
             <div id="final-score" style="color:#fff; margin-top:20px; font-size: 24px; text-shadow: 1px 1px 0 #000;">SCORE: 0</div>
@@ -1109,15 +1183,283 @@
     </div>
 
     <script>
-    // -------------------------
-    // RETROKILL: ULTRA ENHANCED
-    // - Added substage system with unique abilities
-    // - Implemented shield health system
-    // - Added multiplayer framework
-    // - Enhanced visuals with more transitions and animations
-    // - Expanded game world with dynamic zoom
-    // -------------------------
-
+    // Firebase configuration - Replace with your own Firebase project config
+    const firebaseConfig = {
+        apiKey: "YOUR_API_KEY",
+        authDomain: "your-project-id.firebaseapp.com",
+        projectId: "your-project-id",
+        storageBucket: "your-project-id.appspot.com",
+        messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+        appId: "YOUR_APP_ID"
+    };
+    
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    
+    // Multiplayer state
+    let currentGameId = null;
+    let playerId = null;
+    let isHost = false;
+    let multiplayerPlayers = {};
+    let multiplayerMode = false;
+    let playerName = "Player";
+    
+    // Multiplayer manager class
+    class MultiplayerManager {
+        constructor() {
+            this.gameUnsubscribe = null;
+            this.playersUnsubscribe = null;
+        }
+        
+        // Create a new game session
+        async createGame(playerName) {
+            try {
+                // Generate a unique game ID
+                const gameId = Math.random().toString(36).substring(2, 8).toUpperCase();
+                
+                // Create player data
+                playerId = Math.random().toString(36).substring(2, 10);
+                const playerData = {
+                    id: playerId,
+                    name: playerName,
+                    x: 400,
+                    y: 300,
+                    health: 100,
+                    maxHealth: 100,
+                    score: 0,
+                    kills: 0,
+                    alive: true,
+                    ready: false,
+                    joinedAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+                
+                // Create game document
+                await db.collection('games').doc(gameId).set({
+                    id: gameId,
+                    status: 'lobby',
+                    hostId: playerId,
+                    players: {
+                        [playerId]: playerData
+                    },
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                
+                currentGameId = gameId;
+                isHost = true;
+                multiplayerPlayers[playerId] = playerData;
+                
+                // Set up real-time listener for this game
+                this.setupGameListener(gameId);
+                
+                return gameId;
+            } catch (error) {
+                console.error("Error creating game:", error);
+                alert("Failed to create game. Please check your Firebase configuration.");
+                return null;
+            }
+        }
+        
+        // Join an existing game
+        async joinGame(gameId, playerName) {
+            try {
+                // Check if game exists
+                const gameDoc = await db.collection('games').doc(gameId).get();
+                if (!gameDoc.exists) {
+                    alert("Game not found. Please check the code and try again.");
+                    return false;
+                }
+                
+                const gameData = gameDoc.data();
+                if (gameData.status !== 'lobby') {
+                    alert("This game is already in progress.");
+                    return false;
+                }
+                
+                // Create player data
+                playerId = Math.random().toString(36).substring(2, 10);
+                const playerData = {
+                    id: playerId,
+                    name: playerName,
+                    x: 400,
+                    y: 300,
+                    health: 100,
+                    maxHealth: 100,
+                    score: 0,
+                    kills: 0,
+                    alive: true,
+                    ready: false,
+                    joinedAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+                
+                // Add player to game
+                await db.collection('games').doc(gameId).update({
+                    [`players.${playerId}`]: playerData
+                });
+                
+                currentGameId = gameId;
+                isHost = false;
+                multiplayerPlayers[playerId] = playerData;
+                
+                // Set up real-time listener for this game
+                this.setupGameListener(gameId);
+                
+                return true;
+            } catch (error) {
+                console.error("Error joining game:", error);
+                alert("Failed to join game. Please check your Firebase configuration.");
+                return false;
+            }
+        }
+        
+        // Set up real-time listener for game changes
+        setupGameListener(gameId) {
+            // Unsubscribe from any previous listener
+            if (this.gameUnsubscribe) {
+                this.gameUnsubscribe();
+            }
+            
+            this.gameUnsubscribe = db.collection('games').doc(gameId)
+                .onSnapshot((doc) => {
+                    if (doc.exists) {
+                        const gameData = doc.data();
+                        this.handleGameUpdate(gameData);
+                    }
+                }, (error) => {
+                    console.error("Game listener error:", error);
+                });
+        }
+        
+        // Handle game data updates
+        handleGameUpdate(gameData) {
+            // Update players list
+            if (gameData.players) {
+                multiplayerPlayers = gameData.players;
+                this.updatePlayersUI();
+                
+                // Check if game status changed
+                if (gameData.status === 'playing' && document.getElementById('multiplayer-lobby').style.display === 'flex') {
+                    // Start the game
+                    document.getElementById('multiplayer-lobby').style.display = 'none';
+                    initGame();
+                }
+            }
+        }
+        
+        // Update player status in the game
+        async updatePlayerStatus(data) {
+            if (!currentGameId || !playerId) return;
+            
+            try {
+                await db.collection('games').doc(currentGameId).update({
+                    [`players.${playerId}`]: data
+                });
+            } catch (error) {
+                console.error("Error updating player status:", error);
+            }
+        }
+        
+        // Update the players UI list
+        updatePlayersUI() {
+            const playersContainer = document.getElementById('players-container');
+            playersContainer.innerHTML = '';
+            
+            Object.values(multiplayerPlayers).forEach(player => {
+                const playerElement = document.createElement('div');
+                playerElement.className = 'multiplayer-player-item';
+                
+                playerElement.innerHTML = `
+                    <div class="player-info">
+                        <div class="player-status ${player.alive ? 'alive' : 'dead'}"></div>
+                        <div class="player-name">${player.name}</div>
+                    </div>
+                    <div class="player-stats">
+                        K:${player.kills} S:${player.score} H:${player.health}
+                    </div>
+                `;
+                
+                playersContainer.appendChild(playerElement);
+            });
+            
+            // Show the player list in multiplayer mode
+            if (multiplayerMode) {
+                document.getElementById('multiplayer-player-list').style.display = 'block';
+            }
+        }
+        
+        // Set player ready status
+        async setReadyStatus(ready) {
+            if (!currentGameId || !playerId) return;
+            
+            try {
+                await db.collection('games').doc(currentGameId).update({
+                    [`players.${playerId}.ready`]: ready
+                });
+            } catch (error) {
+                console.error("Error updating ready status:", error);
+            }
+        }
+        
+        // Start the game (host only)
+        async startGame() {
+            if (!currentGameId || !isHost) return;
+            
+            try {
+                await db.collection('games').doc(currentGameId).update({
+                    status: 'playing',
+                    startedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            } catch (error) {
+                console.error("Error starting game:", error);
+            }
+        }
+        
+        // Leave the current game
+        async leaveGame() {
+            if (!currentGameId || !playerId) return;
+            
+            try {
+                // Remove player from game
+                await db.collection('games').doc(currentGameId).update({
+                    [`players.${playerId}`]: firebase.firestore.FieldValue.delete()
+                });
+                
+                // If host and no players left, delete the game
+                if (isHost) {
+                    const gameDoc = await db.collection('games').doc(currentGameId).get();
+                    if (gameDoc.exists) {
+                        const gameData = gameDoc.data();
+                        if (!gameData.players || Object.keys(gameData.players).length === 0) {
+                            await db.collection('games').doc(currentGameId).delete();
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error("Error leaving game:", error);
+            }
+            
+            // Reset multiplayer state
+            if (this.gameUnsubscribe) {
+                this.gameUnsubscribe();
+            }
+            if (this.playersUnsubscribe) {
+                this.playersUnsubscribe();
+            }
+            
+            currentGameId = null;
+            playerId = null;
+            isHost = false;
+            multiplayerPlayers = {};
+            multiplayerMode = false;
+            
+            // Hide player list
+            document.getElementById('multiplayer-player-list').style.display = 'none';
+        }
+    }
+    
+    // Create multiplayer manager instance
+    const multiplayerManager = new MultiplayerManager();
+    
     // DOM references
     const gameContainer = document.getElementById('game-container');
     const canvas = document.getElementById('game-canvas');
@@ -1228,10 +1570,6 @@
     let shieldDamageReduction = 0.5;
     let shieldCooldownBonus = 0.2;
     let stageTransitionActive = false;
-    let multiplayerMode = false;
-    let isHost = false;
-    let gameCode = '0000';
-    let players = [];
     let selectedModifiers = [];
     let currentBuff = null;
     let buffTimer = 0;
@@ -1410,6 +1748,18 @@
                 this.trail[i].life -= 0.05;
             }
             this.trail = this.trail.filter(point => point.life > 0);
+            
+            // Update multiplayer status if in multiplayer mode
+            if (multiplayerMode && playerId) {
+                multiplayerManager.updatePlayerStatus({
+                    x: this.x,
+                    y: this.y,
+                    health: this.health,
+                    score: score,
+                    kills: kills,
+                    alive: this.health > 0
+                });
+            }
         }
 
         draw() {
@@ -2085,7 +2435,7 @@
                     ctx.lineWidth = 2;
                     ctx.stroke();
                 }
-            } else if (this.type === 'IDOL') {
+            } else if (type === 'IDOL') {
                 ctx.beginPath();
                 ctx.arc(0, 0, this.radius-3 + pulseSize, 0, Math.PI * 2);
                 ctx.strokeStyle = '#ffff00';
@@ -2448,7 +2798,7 @@
             // out of bounds
             const bounds = getPlayAreaBounds();
             if (this.x < bounds.minX - 20 || this.x > bounds.maxX + 20 || 
-                this.y < bounds.minY - 20 || this.y > bounds.maxY + 20) {
+                this.y < bounds.minY - 20 || this.y < bounds.maxY + 20) {
                 this.explode();
             }
             
@@ -2992,103 +3342,12 @@
         const accuracy = shotsFired > 0 ? Math.round((shotsHit / shotsFired) * 100) : 100;
         finalAccuracy.textContent = `${accuracy}%`;
         gameOverScreen.style.display = 'flex';
-    }
-
-    // Multiplayer functions
-    function generateGameCode() {
-        return Math.floor(1000 + Math.random() * 9000).toString();
-    }
-
-    function hostGame() {
-        multiplayerMode = true;
-        isHost = true;
-        gameCode = generateGameCode();
-        gameCodeDisplay.textContent = `CODE: ${gameCode}`;
         
-        // Add host player to list
-        players = [{ name: 'Player 1 (Host)', ready: true }];
-        updatePlayerList();
-        
-        // Show lobby
-        mainMenu.style.opacity = '0';
-        setTimeout(() => {
-            mainMenu.style.display = 'none';
-            multiplayerLobby.style.display = 'flex';
-        }, 1000);
-    }
-
-    function joinGame() {
-        const code = prompt("Enter game code:");
-        if (code && code.length === 4) {
-            multiplayerMode = true;
-            isHost = false;
-            gameCode = code;
-            gameCodeDisplay.textContent = `CODE: ${gameCode}`;
-            
-            // Add player to list
-            players = [
-                { name: 'Host Player', ready: true },
-                { name: 'Player 2', ready: false }
-            ];
-            updatePlayerList();
-            
-            // Show lobby
-            mainMenu.style.opacity = '0';
-            setTimeout(() => {
-                mainMenu.style.display = 'none';
-                multiplayerLobby.style.display = 'flex';
-            }, 50);
-        } else {
-            alert("Invalid game code. Please enter a 4-digit code.");
-        }
-    }
-
-    function updatePlayerList() {
-        playerList.innerHTML = '';
-        players.forEach((player, index) => {
-            const playerItem = document.createElement('div');
-            playerItem.className = 'player-item';
-            playerItem.innerHTML = `
-                <span class="player-name">${player.name}</span>
-                <span class="player-ready">${player.ready ? 'READY' : 'NOT READY'}</span>
-            `;
-            playerList.appendChild(playerItem);
-        });
-        
-        // Show/hide start game button based on host status
-        if (isHost) {
-            startGameButton.style.display = 'block';
-        } else {
-            startGameButton.style.display = 'none';
-        }
-    }
-
-    function toggleReady() {
-        playerReady = !playerReady;
-        
-        // Update player ready status
-        if (isHost) {
-            players[0].ready = playerReady;
-        } else {
-            players[1].ready = playerReady;
-        }
-        
-        updatePlayerList();
-        
-        // Update ready button text
-        readyButton.textContent = playerReady ? 'NOT READY' : 'READY';
-    }
-
-    function startMultiplayerGame() {
-        if (isHost) {
-            // Check if all players are ready
-            const allReady = players.every(player => player.ready);
-            if (allReady) {
-                multiplayerLobby.style.display = 'none';
-                initGame();
-            } else {
-                alert("Not all players are ready!");
-            }
+        // Update multiplayer status
+        if (multiplayerMode && playerId) {
+            multiplayerManager.updatePlayerStatus({
+                alive: false
+            });
         }
     }
 
@@ -3466,14 +3725,41 @@
         cursorDot.style.display = 'none';
     });
     
-    hostButton.addEventListener('click', ()=>{
+    hostButton.addEventListener('click', async ()=>{
         initSettings();
-        hostGame();
+        playerName = prompt("Enter your name:", "Player") || "Player";
+        const gameId = await multiplayerManager.createGame(playerName);
+        if (gameId) {
+            gameCodeDisplay.textContent = `CODE: ${gameId}`;
+            multiplayerMode = true;
+            
+            // Show lobby
+            mainMenu.style.opacity = '0';
+            setTimeout(() => {
+                mainMenu.style.display = 'none';
+                multiplayerLobby.style.display = 'flex';
+            }, 1000);
+        }
     });
     
-    joinButton.addEventListener('click', ()=>{
+    joinButton.addEventListener('click', async ()=>{
         initSettings();
-        joinGame();
+        playerName = prompt("Enter your name:", "Player") || "Player";
+        const gameCode = prompt("Enter game code:");
+        if (gameCode) {
+            const success = await multiplayerManager.joinGame(gameCode.toUpperCase(), playerName);
+            if (success) {
+                gameCodeDisplay.textContent = `CODE: ${gameCode.toUpperCase()}`;
+                multiplayerMode = true;
+                
+                // Show lobby
+                mainMenu.style.opacity = '0';
+                setTimeout(() => {
+                    mainMenu.style.display = 'none';
+                    multiplayerLobby.style.display = 'flex';
+                }, 1000);
+            }
+        }
     });
     
     modifiersButton.addEventListener('click', ()=>{
@@ -3511,9 +3797,15 @@
         initGame();
     });
     
-    menuButton.addEventListener('click', ()=>{
+    menuButton.addEventListener('click', async ()=>{
         gameOverScreen.style.display = 'none';
         gameContainer.style.opacity = '0';
+        
+        // Leave multiplayer game if in multiplayer mode
+        if (multiplayerMode) {
+            await multiplayerManager.leaveGame();
+        }
+        
         setTimeout(() => {
             gameContainer.style.display = 'none';
             mainMenu.style.display = 'flex';
@@ -3532,7 +3824,10 @@
         guidebook.style.display = 'none';
     });
     
-    lobbyBackButton.addEventListener('click', ()=>{
+    lobbyBackButton.addEventListener('click', async ()=>{
+        // Leave multiplayer game
+        await multiplayerManager.leaveGame();
+        
         multiplayerLobby.style.display = 'none';
         mainMenu.style.display = 'flex';
         setTimeout(() => {
@@ -3541,15 +3836,13 @@
     });
     
     readyButton.addEventListener('click', ()=>{
-        toggleReady();
+        playerReady = !playerReady;
+        multiplayerManager.setReadyStatus(playerReady);
+        readyButton.textContent = playerReady ? 'NOT READY' : 'READY';
     });
     
     startGameButton.addEventListener('click', ()=>{
-        startMultiplayerGame();
-        // Hide cursor during gameplay
-        document.body.classList.remove('menu-mode');
-        customCursor.style.display = 'none';
-        cursorDot.style.display = 'none';
+        multiplayerManager.startGame();
     });
 
     // Modifier selection
@@ -3658,7 +3951,7 @@
             
             menuCtx.fillStyle = i % 2 === 0 ? '#6666ff' : '#ff3333';
             menuCtx.beginPath();
-            menuCtx.arc(x, y, size, 0, Math.PI * 2);
+            ctx.arc(x, y, size, 0, Math.PI * 2);
             menuCtx.fill();
             
             menuCtx.strokeStyle = '#fff';
