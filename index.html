@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>RETROKILL: Remastered</title>
+    <title>RETROKILL: Remastered - Fixed Multiplayer</title>
     <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
@@ -829,11 +829,13 @@
             font-size: 20px;
             color: #ffcc00;
             margin-bottom: 5px;
+            text-shadow: 1px 1px 0 #000;
         }
 
         .modifier-desc {
             font-size: 16px;
             color: #fff;
+            text-shadow: 1px 1px 0 #000;
         }
 
         .modifiers-actions {
@@ -882,11 +884,13 @@
             font-size: 20px;
             color: #ffcc00;
             margin-bottom: 10px;
+            text-shadow: 1px 1px 0 #000;
         }
 
         .substage-desc {
             font-size: 14px;
             color: #fff;
+            text-shadow: 1px 1px 0 #000;
         }
 
         /* Effects */
@@ -986,6 +990,62 @@
         .player-stats {
             font-size: 12px;
             color: #cccccc;
+            text-shadow: 1px 1px 0 #000;
+        }
+
+        /* Connection status */
+        #connection-status {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid #ff003c;
+            border-radius: 5px;
+            padding: 8px 12px;
+            color: #fff;
+            font-size: 14px;
+            z-index: 15;
+            display: none;
+        }
+
+        .status-connected {
+            color: #00ff00;
+        }
+
+        .status-disconnected {
+            color: #ff003c;
+        }
+
+        /* Player name input */
+        .name-input-container {
+            margin-bottom: 20px;
+            width: 100%;
+        }
+
+        .name-input {
+            width: 100%;
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.7);
+            border: 2px solid #ff003c;
+            border-radius: 5px;
+            color: #fff;
+            font-family: 'VT323', monospace;
+            font-size: 18px;
+            text-align: center;
+        }
+
+        .name-input:focus {
+            outline: none;
+            box-shadow: 0 0 10px #ff003c;
+        }
+
+        /* Error message */
+        .error-message {
+            color: #ff003c;
+            margin-top: 10px;
+            text-align: center;
+            font-size: 16px;
+            text-shadow: 1px 1px 0 #000;
         }
     </style>
 </head>
@@ -1006,6 +1066,10 @@
         </div>
         <div class="menu-content">
             <div class="title">RETROKILL</div>
+            
+            <div class="name-input-container">
+                <input type="text" class="name-input" id="player-name-input" placeholder="ENTER YOUR NAME" maxlength="15" value="Player">
+            </div>
             
             <div class="menu-options">
                 <div class="menu-option" id="singleplayer-button">SINGLEPLAYER</div>
@@ -1076,6 +1140,10 @@
         <div id="blood-overlay"></div>
         <div id="crosshair"></div>
 
+        <div id="connection-status">
+            Connection: <span class="status-connected" id="connection-text">Connected</span>
+        </div>
+
         <div id="ui-container">
             <div class="health-bar">
                 <div id="shield-bar"></div>
@@ -1141,11 +1209,8 @@
         <div class="lobby-content">
             <h2>MULTIPLAYER LOBBY</h2>
             <div class="game-code-display" id="game-code">CODE: 0000</div>
-            <div class="player-list" id="player-list">
-                <div class="player-item">
-                    <span class="player-name">Player 1 (Host)</span>
-                    <span class="player-ready">READY</span>
-                </div>
+            <div class="player-list" id="lobby-player-list">
+                <!-- Player list will be populated here -->
             </div>
             <div class="ready-button-container">
                 <div class="menu-option" id="ready-button">READY</div>
@@ -1185,13 +1250,13 @@
     <script>
     // Firebase configuration - Replace with your own Firebase project config
     const firebaseConfig = {
-       apiKey: "AIzaSyAer8Y2j4cGrEkqpRKCmd3H3b3vZNXtTBw",
-  authDomain: "retrokill-73ce9.firebaseapp.com",
-  projectId: "retrokill-73ce9",
-  storageBucket: "retrokill-73ce9.firebasestorage.app",
-  messagingSenderId: "787661292350",
-  appId: "1:787661292350:web:0ddfa5d7ad315476dda26f",
-  measurementId: "G-BLTZCY62PX"
+        apiKey: "AIzaSyAer8Y2j4cGrEkqpRKCmd3H3b3vZNXtTBw",
+        authDomain: "retrokill-73ce9.firebaseapp.com",
+        projectId: "retrokill-73ce9",
+        storageBucket: "retrokill-73ce9.firebasestorage.app",
+        messagingSenderId: "787661292350",
+        appId: "1:787661292350:web:0ddfa5d7ad315476dda26f",
+        measurementId: "G-BLTZCY62PX"
     };
     
     // Initialize Firebase
@@ -1211,6 +1276,7 @@
         constructor() {
             this.gameUnsubscribe = null;
             this.playersUnsubscribe = null;
+            this.connectionStatus = 'disconnected';
         }
         
         // Create a new game session
@@ -1249,6 +1315,8 @@
                 currentGameId = gameId;
                 isHost = true;
                 multiplayerPlayers[playerId] = playerData;
+                this.connectionStatus = 'connected';
+                updateConnectionStatus();
                 
                 // Set up real-time listener for this game
                 this.setupGameListener(gameId);
@@ -1256,7 +1324,7 @@
                 return gameId;
             } catch (error) {
                 console.error("Error creating game:", error);
-                alert("Failed to create game. Please check your Firebase configuration.");
+                showError("Failed to create game. Please check your Firebase configuration.");
                 return null;
             }
         }
@@ -1267,13 +1335,13 @@
                 // Check if game exists
                 const gameDoc = await db.collection('games').doc(gameId).get();
                 if (!gameDoc.exists) {
-                    alert("Game not found. Please check the code and try again.");
+                    showError("Game not found. Please check the code and try again.");
                     return false;
                 }
                 
                 const gameData = gameDoc.data();
                 if (gameData.status !== 'lobby') {
-                    alert("This game is already in progress.");
+                    showError("This game is already in progress.");
                     return false;
                 }
                 
@@ -1301,6 +1369,8 @@
                 currentGameId = gameId;
                 isHost = false;
                 multiplayerPlayers[playerId] = playerData;
+                this.connectionStatus = 'connected';
+                updateConnectionStatus();
                 
                 // Set up real-time listener for this game
                 this.setupGameListener(gameId);
@@ -1308,7 +1378,7 @@
                 return true;
             } catch (error) {
                 console.error("Error joining game:", error);
-                alert("Failed to join game. Please check your Firebase configuration.");
+                showError("Failed to join game. Please check your Firebase configuration.");
                 return false;
             }
         }
@@ -1328,6 +1398,8 @@
                     }
                 }, (error) => {
                     console.error("Game listener error:", error);
+                    this.connectionStatus = 'disconnected';
+                    updateConnectionStatus();
                 });
         }
         
@@ -1336,6 +1408,7 @@
             // Update players list
             if (gameData.players) {
                 multiplayerPlayers = gameData.players;
+                this.updateLobbyPlayersUI();
                 this.updatePlayersUI();
                 
                 // Check if game status changed
@@ -1353,7 +1426,10 @@
             
             try {
                 await db.collection('games').doc(currentGameId).update({
-                    [`players.${playerId}`]: data
+                    [`players.${playerId}`]: {
+                        ...multiplayerPlayers[playerId],
+                        ...data
+                    }
                 });
             } catch (error) {
                 console.error("Error updating player status:", error);
@@ -1372,10 +1448,10 @@
                 playerElement.innerHTML = `
                     <div class="player-info">
                         <div class="player-status ${player.alive ? 'alive' : 'dead'}"></div>
-                        <div class="player-name">${player.name}</div>
+                        <div class="player-name">${player.name || 'Unknown'}</div>
                     </div>
                     <div class="player-stats">
-                        K:${player.kills} S:${player.score} H:${player.health}
+                        K:${player.kills || 0} S:${player.score || 0} H:${player.health || 0}
                     </div>
                 `;
                 
@@ -1386,6 +1462,35 @@
             if (multiplayerMode) {
                 document.getElementById('multiplayer-player-list').style.display = 'block';
             }
+        }
+        
+        // Update the lobby players UI list
+        updateLobbyPlayersUI() {
+            const lobbyPlayerList = document.getElementById('lobby-player-list');
+            lobbyPlayerList.innerHTML = '';
+            
+            Object.values(multiplayerPlayers).forEach(player => {
+                const playerElement = document.createElement('div');
+                playerElement.className = 'player-item';
+                
+                playerElement.innerHTML = `
+                    <span class="player-name">${player.name || 'Unknown'} ${player.id === multiplayerManager.getHostId() ? '(Host)' : ''}</span>
+                    <span class="player-ready">${player.ready ? 'READY' : 'NOT READY'}</span>
+                `;
+                
+                lobbyPlayerList.appendChild(playerElement);
+            });
+        }
+        
+        // Get host ID
+        getHostId() {
+            if (!currentGameId) return null;
+            for (const playerId in multiplayerPlayers) {
+                if (multiplayerPlayers[playerId].isHost) {
+                    return playerId;
+                }
+            }
+            return null;
         }
         
         // Set player ready status
@@ -1406,6 +1511,14 @@
             if (!currentGameId || !isHost) return;
             
             try {
+                // Check if all players are ready
+                const allReady = Object.values(multiplayerPlayers).every(player => player.ready);
+                
+                if (!allReady) {
+                    showError("Not all players are ready!");
+                    return;
+                }
+                
                 await db.collection('games').doc(currentGameId).update({
                     status: 'playing',
                     startedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -1452,6 +1565,8 @@
             isHost = false;
             multiplayerPlayers = {};
             multiplayerMode = false;
+            this.connectionStatus = 'disconnected';
+            updateConnectionStatus();
             
             // Hide player list
             document.getElementById('multiplayer-player-list').style.display = 'none';
@@ -1497,7 +1612,7 @@
     const stageDisplay = document.getElementById('stage-display');
     const finalKills = document.getElementById('final-kills');
     const finalCombo = document.getElementById('final-combo');
-    const finalAccuracy = document.getElementById('final-accuracy');
+    finalAccuracy = document.getElementById('final-accuracy');
     const finalStage = document.getElementById('final-stage');
     const dashAbility = document.getElementById('dash-ability');
     const parryAbility = document.getElementById('parry-ability');
@@ -1508,7 +1623,6 @@
     const shieldEffect = document.getElementById('shield-effect');
     const multiplayerLobby = document.getElementById('multiplayer-lobby');
     const gameCodeDisplay = document.getElementById('game-code');
-    const playerList = document.getElementById('player-list');
     const lobbyBackButton = document.getElementById('lobby-back');
     const startGameButton = document.getElementById('start-game');
     const readyButton = document.getElementById('ready-button');
@@ -1520,6 +1634,9 @@
     const modifiersConfirmButton = document.getElementById('modifiers-confirm');
     const customCursor = document.querySelector('.custom-cursor');
     const cursorDot = document.querySelector('.cursor-dot');
+    const playerNameInput = document.getElementById('player-name-input');
+    const connectionStatus = document.getElementById('connection-status');
+    const connectionText = document.getElementById('connection-text');
 
     // Game state
     let gameActive = false;
@@ -1645,6 +1762,40 @@
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     const lerp = (a, b, t) => a + (b - a) * t;
     const distance = (x1, y1, x2, y2) => Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+
+    // Helper functions for UI
+    function updateConnectionStatus() {
+        if (multiplayerMode) {
+            connectionStatus.style.display = 'block';
+            if (multiplayerManager.connectionStatus === 'connected') {
+                connectionText.textContent = 'Connected';
+                connectionText.className = 'status-connected';
+            } else {
+                connectionText.textContent = 'Disconnected';
+                connectionText.className = 'status-disconnected';
+            }
+        } else {
+            connectionStatus.style.display = 'none';
+        }
+    }
+
+    function showError(message) {
+        // Create error message element
+        const errorElement = document.createElement('div');
+        errorElement.className = 'error-message';
+        errorElement.textContent = message;
+        
+        // Add to the main menu
+        const menuContent = document.querySelector('.menu-content');
+        menuContent.appendChild(errorElement);
+        
+        // Remove after 3 seconds
+        setTimeout(() => {
+            if (menuContent.contains(errorElement)) {
+                menuContent.removeChild(errorElement);
+            }
+        }, 3000);
+    }
 
     // Player class
     class Player {
@@ -3080,7 +3231,6 @@
         if (styleTimeout) clearTimeout(styleTimeout);
         startStyleDecay();
     }
-
     function startStyleDecay() {
         if (stylePoints <= 0) return;
         const decayRate = 0.12 / (1 + difficulty * 0.5);
@@ -3717,6 +3867,7 @@
 
     // UI event handlers
     singleplayerButton.addEventListener('click', ()=>{
+        playerName = playerNameInput.value || "Player";
         initSettings();
         multiplayerMode = false;
         initGame();
@@ -3727,8 +3878,8 @@
     });
     
     hostButton.addEventListener('click', async ()=>{
+        playerName = playerNameInput.value || "Player";
         initSettings();
-        playerName = prompt("Enter your name:", "Player") || "Player";
         const gameId = await multiplayerManager.createGame(playerName);
         if (gameId) {
             gameCodeDisplay.textContent = `CODE: ${gameId}`;
@@ -3744,8 +3895,8 @@
     });
     
     joinButton.addEventListener('click', async ()=>{
+        playerName = playerNameInput.value || "Player";
         initSettings();
-        playerName = prompt("Enter your name:", "Player") || "Player";
         const gameCode = prompt("Enter game code:");
         if (gameCode) {
             const success = await multiplayerManager.joinGame(gameCode.toUpperCase(), playerName);
@@ -3795,6 +3946,7 @@
     });
     
     restartButton.addEventListener('click', ()=>{
+        gameOverScreen.style.display = 'none';
         initGame();
     });
     
