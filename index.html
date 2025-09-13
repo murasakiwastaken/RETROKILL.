@@ -2435,7 +2435,7 @@
                     ctx.lineWidth = 2;
                     ctx.stroke();
                 }
-            } else if (type === 'IDOL') {
+            } else if (this.type === 'IDOL') {
                 ctx.beginPath();
                 ctx.arc(0, 0, this.radius-3 + pulseSize, 0, Math.PI * 2);
                 ctx.strokeStyle = '#ffff00';
@@ -2554,17 +2554,17 @@
             this.y = bounds.minY + Math.random() * (bounds.maxY - bounds.minY);
             this.type = type;
             
-            if (type === 'SPIKE') {
+            if (this.type === 'SPIKE') {
                 this.radius = 15;
                 this.damage = 5;
                 this.color = '#ff0000';
-            } else if (type === 'LASER') {
+            } else if (this.type === 'LASER') {
                 this.radius = 10;
                 this.damage = 2;
                 this.color = '#00ffff';
                 this.laserActive = true;
                 this.laserTimer = 0;
-            } else if (type === 'MINE') {
+            } else if (this.type === 'MINE') {
                 this.radius = 8;
                 this.damage = 15;
                 this.color = '#ffff00';
