@@ -1252,6 +1252,7 @@
     </div>
 
     <script>
+        window.multiplayerPlayerObjects = {};
     // Firebase configuration - Replace with your own Firebase project config
     const firebaseConfig = {
         apiKey: "AIzaSyAer8Y2j4cGrEkqpRKCmd3H3b3vZNXtTBw",
@@ -1296,7 +1297,22 @@
                 kills: 0
             };
         }
-        
+        async updatePlayerAction(action, data = {}) {
+    if (!currentGameId || !playerId) return;
+    
+    try {
+        await db.collection('games').doc(currentGameId).update({
+            [`players.${playerId}.action`]: {
+                type: action,
+                ...data,
+                timestamp: Date.now()
+            }
+        });
+    } catch (error) {
+        console.error("Error updating player action:", error);
+    }
+}
+
         // Create a new game session
         async createGame(playerName) {
             try {
@@ -1424,20 +1440,49 @@
         
         // Handle game data updates
         handleGameUpdate(gameData) {
-            // Update players list
-            if (gameData.players) {
-                multiplayerPlayers = gameData.players;
-                this.updateLobbyPlayersUI();
-                this.updatePlayersUI();
-                
-                // Check if game status changed
-                if (gameData.status === 'playing' && document.getElementById('multiplayer-lobby').style.display === 'flex') {
-                    // Start the game
-                    document.getElementById('multiplayer-lobby').style.display = 'none';
-                    initGame();
+    // Update players list
+    if (gameData.players) {
+        multiplayerPlayers = gameData.players;
+        this.updateLobbyPlayersUI();
+        this.updatePlayersUI();
+        
+        // Update multiplayer player objects for rendering
+        for (const playerId in gameData.players) {
+            if (playerId !== playerId) { // Skip local player
+                const playerData = gameData.players[playerId];
+                if (!window.multiplayerPlayerObjects[playerId]) {
+                    window.multiplayerPlayerObjects[playerId] = new MultiplayerPlayer(
+                        playerId, 
+                        playerData.name, 
+                        playerData.x, 
+                        playerData.y
+                    );
+                } else {
+                    window.multiplayerPlayerObjects[playerId].update(playerData);
                 }
             }
-            
+        }
+        
+        // Remove players that left
+        for (const playerId in window.multiplayerPlayerObjects) {
+            if (!gameData.players[playerId]) {
+                delete window.multiplayerPlayerObjects[playerId];
+            }
+        }
+    }
+               // Handle player actions
+    if (gameData.players) {
+        for (const playerId in gameData.players) {
+            const player = gameData.players[playerId];
+            if (player.action && player.action.timestamp > (this.lastActionTimestamps[playerId] || 0)) {
+                this.lastActionTimestamps[playerId] = player.action.timestamp;
+                
+                if (playerId !== playerId && window.multiplayerPlayerObjects[playerId]) {
+                    window.multiplayerPlayerObjects[playerId].showAction(player.action.type);
+                }
+            }
+        }
+    }
             // Update game state if in multiplayer mode
             if (multiplayerMode && gameData.gameState) {
                 this.gameState = gameData.gameState;
@@ -1648,7 +1693,7 @@
     
     // Create multiplayer manager instance
     const multiplayerManager = new MultiplayerManager();
-    
+    let multiplayerPlayers = {};
     // DOM references
     const gameContainer = document.getElementById('game-container');
     const canvas = document.getElementById('game-canvas');
@@ -1975,18 +2020,21 @@
             }
             this.trail = this.trail.filter(point => point.life > 0);
             
-            // Update multiplayer status if in multiplayer mode
-            if (multiplayerMode && playerId) {
-                multiplayerManager.updatePlayerStatus({
-                    x: this.x,
-                    y: this.y,
-                    health: this.health,
-                    score: score,
-                    kills: kills,
-                    alive: this.health > 0
-                });
-            }
-        }
+       
+    // Update multiplayer status more frequently
+    if (multiplayerMode && playerId && Date.now() - this.lastUpdate > 100) {
+        multiplayerManager.updatePlayerStatus({
+            x: this.x,
+            y: this.y,
+            health: this.health,
+            rotation: this.rotation,
+            score: score,
+            kills: kills,
+            alive: this.health > 0
+        });
+        this.lastUpdate = Date.now();
+    }
+}
 
         draw() {
             // camera shake offsets
@@ -2100,7 +2148,9 @@
             this.shootCooldown = weapons[currentWeapon].cooldown;
             shotsFired++;
             updateAccuracy();
-
+    if (multiplayerMode) {
+        multiplayerManager.updatePlayerAction('shoot');
+    }
             const weapon = weapons[currentWeapon];
             const baseAngle = this.rotation;
 
@@ -2156,6 +2206,9 @@
             if (dashCooldown > 0 || this.dashing) return;
             this.dashing = true;
             this.dashTime = this.dashDuration;
+               if (multiplayerMode) {
+        multiplayerManager.updatePlayerAction('dash');
+    }
             // Apply shield cooldown bonus if active
             const cooldownModifier = this.shieldHealth > 0 ? (1 - shieldCooldownBonus) : 1;
             dashCooldown = 0.5 * cooldownModifier;
@@ -2285,7 +2338,9 @@
             if (selectedModifiers.includes('hard-mode')) {
                 amount *= 2;
             }
-            
+               if (multiplayerMode) {
+        multiplayerManager.updatePlayerAction('hurt', { amount });
+    }
             // Apply damage to shield first with damage reduction
             if (this.shieldHealth > 0) {
                 const shieldDamage = amount * (1 - shieldDamageReduction);
@@ -2366,6 +2421,163 @@
     }
 
     // Ally class (converted enemies)
+        // Add this class to your existing code
+class MultiplayerPlayer {
+    constructor(id, name, x, y, color) {
+        this.id = id;
+        this.name = name;
+        this.x = x;
+        this.y = y;
+        this.radius = 20;
+        this.color = color || this.generateColorFromId(id);
+        this.health = 100;
+        this.rotation = 0;
+        this.trail = [];
+        this.trailLength = 10;
+    }
+       
+    showAction(action) {
+        // Visual feedback for player actions
+        switch(action) {
+            case 'shoot':
+                this.muzzleFlash = 1.0;
+                break;
+            case 'dash':
+                this.dashEffect = 1.0;
+                break;
+            case 'hurt':
+                this.hurtEffect = 1.0;
+                break;
+        }
+    }
+
+    generateColorFromId(id) {
+        // Generate a consistent color based on player ID
+        const colors = ['#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff'];
+        const index = id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length;
+        return colors[index];
+    }
+
+    update(data) {
+        
+        this.x = data.x;
+        this.y = data.y;
+        this.health = data.health;
+        this.rotation = data.rotation || 0;
+        
+        // Add trail point
+        this.trail.push({x: this.x, y: this.y, life: 1});
+        if (this.trail.length > this.trailLength) this.trail.shift();
+        
+        // Update trail
+        for (let i = 0; i < this.trail.length; i++) {
+            this.trail[i].life -= 0.05;
+        }
+        this.trail = this.trail.filter(point => point.life > 0);
+        if (this.muzzleFlash > 0) this.muzzleFlash -= 0.1;
+        if (this.dashEffect > 0) this.dashEffect -= 0.05;
+        if (this.hurtEffect > 0) this.hurtEffect -= 0.08;
+    }
+    draw() {
+        const shakeX = cameraShake > 0 ? (Math.random()-0.5) * cameraShake : 0;
+        const shakeY = cameraShake > 0 ? (Math.random()-0.5) * cameraShake : 0;
+
+        // Draw trail
+        for (let i = 0; i < this.trail.length; i++) {
+            const point = this.trail[i];
+            const alpha = point.life * 0.3;
+            const size = this.radius * (i / this.trail.length) * 0.8;
+            
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.beginPath();
+            ctx.arc(point.x + shakeX, point.y + shakeY, size, 0, Math.PI * 2);
+            ctx.fillStyle = this.color;
+            ctx.fill();
+            ctx.restore();
+        }
+
+        ctx.save();
+        ctx.translate(this.x + shakeX, this.y + shakeY);
+        ctx.rotate(this.rotation);
+
+        // Draw player body
+        ctx.beginPath();
+        ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+        
+        // Create gradient
+        const gradient = ctx.createRadialGradient(
+            -this.radius * 0.3, -this.radius * 0.3, 0,
+            0, 0, this.radius
+        );
+        gradient.addColorStop(0, this.color);
+        gradient.addColorStop(1, this.color.replace(')', ', 0.7)').replace('rgb', 'rgba'));
+        
+        ctx.fillStyle = gradient;
+        ctx.fill();
+        
+        // Outer glow
+        ctx.beginPath();
+        ctx.arc(0, 0, this.radius + 3, 0, Math.PI * 2);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    // Draw muzzle flash
+        if (this.muzzleFlash > 0) {
+            ctx.save();
+            ctx.globalAlpha = this.muzzleFlash;
+            ctx.beginPath();
+            ctx.arc(
+                Math.cos(this.rotation) * this.radius, 
+                Math.sin(this.rotation) * this.radius, 
+                8 * this.muzzleFlash, 
+                0, 
+                Math.PI * 2
+            );
+            ctx.fillStyle = '#ffcc00';
+            ctx.fill();
+            ctx.restore();
+        }
+        
+        // Draw dash effect
+        if (this.dashEffect > 0) {
+            ctx.save();
+            ctx.globalAlpha = this.dashEffect * 0.3;
+            ctx.beginPath();
+            ctx.arc(0, 0, this.radius + 15 * this.dashEffect, 0, Math.PI * 2);
+            ctx.fillStyle = '#00ccff';
+            ctx.fill();
+            ctx.restore();
+        }
+        
+        // Draw hurt effect
+        if (this.hurtEffect > 0) {
+            ctx.save();
+            ctx.globalAlpha = this.hurtEffect * 0.5;
+            ctx.beginPath();
+            ctx.arc(0, 0, this.radius + 5, 0, Math.PI * 2);
+            ctx.fillStyle = '#ff0000';
+            ctx.fill();
+            ctx.restore();
+        }
+    }
+        // Draw player name
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '12px VT323';
+        ctx.textAlign = 'center';
+        ctx.fillText(this.name, 0, -this.radius - 15);
+
+        // Draw health bar
+        const barWidth = this.radius * 2;
+        const healthPercent = this.health / 100;
+        ctx.fillStyle = '#330000';
+        ctx.fillRect(-barWidth/2, -this.radius - 10, barWidth, 5);
+        ctx.fillStyle = '#00ff00';
+        ctx.fillRect(-barWidth/2, -this.radius - 10, barWidth * healthPercent, 5);
+
+        ctx.restore();
+    }
+}
     class Ally {
         constructor(x, y, type) {
             this.x = x;
@@ -2422,7 +2634,21 @@
                     this.attackCooldown = 1;
                 }
             }
-
+    // Multiplayer collision avoidance
+    if (multiplayerMode) {
+        for (const playerId in window.multiplayerPlayerObjects) {
+            if (playerId !== playerId) {
+                const otherPlayer = window.multiplayerPlayerObjects[playerId];
+                const dist = distance(this.x, this.y, otherPlayer.x, otherPlayer.y);
+                if (dist < this.radius + otherPlayer.radius + 10) {
+                    // Push away from other player
+                    const angle = Math.atan2(this.y - otherPlayer.y, this.x - otherPlayer.x);
+                    this.x += Math.cos(angle) * 0.5;
+                    this.y += Math.sin(angle) * 0.5;
+                }
+            }
+        }
+    }
             // Update pulse effect
             this.pulse = (this.pulse + deltaTime * 2) % (Math.PI * 2);
         }
@@ -3619,7 +3845,7 @@
         aimAssistStrength = 0;
         healthRegenTimer = 0;
         infiniteMode = selectedModifiers.includes('infinite-mode');
-
+        multiplayerPlayers = {};
         healthFill.style.width = '100%';
         shieldBar.style.width = '0%';
         shieldEffect.style.opacity = '0';
@@ -3706,9 +3932,16 @@
         // Draw allies
         for (const ally of allies) ally.draw();
         
-        // Draw player
-        if (player) player.draw();
-        
+ // Draw local player
+    if (player) player.draw();
+    
+    // Draw multiplayer players
+    for (const playerId in window.multiplayerPlayerObjects) {
+        if (playerId !== playerId) { // Skip local player
+            window.multiplayerPlayerObjects[playerId].draw();
+        }
+    }
+            
         // Draw explosions
         for (const explosion of explosions) {
             const alpha = explosion.life;
