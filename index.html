@@ -1939,7 +1939,7 @@
             this.trailLength = 10;
             this.invulnerable = false;
             this.healthRegen = 0; // Health regeneration per second (percentage)
-            
+            this.lastUpdate = Date.now();
             // Apply modifiers
             if (selectedModifiers.includes('double-health')) {
                 this.health = 200;
@@ -1949,7 +1949,6 @@
                 this.speed *= 1.5;
             }
         }
-this.lastUpdate = Date.now();
 
         update(deltaTime) {
             // Health regeneration (if enabled by substage)
