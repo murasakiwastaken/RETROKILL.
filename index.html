@@ -1298,7 +1298,8 @@
         }
         async updatePlayerAction(action, data = {}) {
     if (!currentGameId || !playerId) return;
-    
+    this.lastActionTimestamps = {};
+
     try {
         await db.collection('games').doc(currentGameId).update({
             [`players.${playerId}.action`]: {
@@ -1311,8 +1312,7 @@
         console.error("Error updating player action:", error);
     }
 }
-// In MultiplayerManager constructor, add:
-this.lastActionTimestamps = {};
+        
         // Create a new game session
         async createGame(playerName) {
             try {
