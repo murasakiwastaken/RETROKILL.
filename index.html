@@ -1272,7 +1272,6 @@
     let currentGameId = null;
     let playerId = null;
     let isHost = false;
-    let multiplayerPlayers = {};
     let multiplayerMode = false;
     let playerName = "Player";
     
@@ -1312,7 +1311,8 @@
         console.error("Error updating player action:", error);
     }
 }
-
+// In MultiplayerManager constructor, add:
+this.lastActionTimestamps = {};
         // Create a new game session
         async createGame(playerName) {
             try {
@@ -1949,6 +1949,7 @@
                 this.speed *= 1.5;
             }
         }
+this.lastUpdate = Date.now();
 
         update(deltaTime) {
             // Health regeneration (if enabled by substage)
