@@ -2562,11 +2562,10 @@ class MultiplayerPlayer {
         }
     }
         // Draw player name
-        ctx.fillStyle = '#ffffff';
         ctx.font = '12px VT323';
         ctx.textAlign = 'center';
         ctx.fillText(this.name, 0, -this.radius - 15);
-
+        ctx.fillStyle = '#ffffff';
         // Draw health bar
         const barWidth = this.radius * 2;
         const healthPercent = this.health / 100;
