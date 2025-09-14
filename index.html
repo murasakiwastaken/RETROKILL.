@@ -2477,120 +2477,111 @@ class MultiplayerPlayer {
         if (this.muzzleFlash > 0) this.muzzleFlash -= 0.1;
         if (this.dashEffect > 0) this.dashEffect -= 0.05;
         if (this.hurtEffect > 0) this.hurtEffect -= 0.08;
-    }
-    draw() {
-        const shakeX = cameraShake > 0 ? (Math.random()-0.5) * cameraShake : 0;
-        const shakeY = cameraShake > 0 ? (Math.random()-0.5) * cameraShake : 0;
+    }draw() {
+    const shakeX = cameraShake > 0 ? (Math.random()-0.5) * cameraShake : 0;
+    const shakeY = cameraShake > 0 ? (Math.random()-0.5) * cameraShake : 0;
 
-        // Draw trail
-        for (let i = 0; i < this.trail.length; i++) {
-            const point = this.trail[i];
-            const alpha = point.life * 0.3;
-            const size = this.radius * (i / this.trail.length) * 0.8;
-            
-            ctx.save();
-            ctx.globalAlpha = alpha;
-            ctx.beginPath();
-            ctx.arc(point.x + shakeX, point.y + shakeY, size, 0, Math.PI * 2);
-            ctx.fillStyle = this.color;
-            ctx.fill();
-            ctx.restore();
-        }
-
+    // Draw trail
+    for (let i = 0; i < this.trail.length; i++) {
+        const point = this.trail[i];
+        const alpha = point.life * 0.3;
+        const size = this.radius * (i / this.trail.length) * 0.8;
+        
         ctx.save();
-        ctx.translate(this.x + shakeX, this.y + shakeY);
-        ctx.rotate(this.rotation);
-
-        // Draw player body
+        ctx.globalAlpha = alpha;
         ctx.beginPath();
-        ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
-        
-        // Create gradient
-        const gradient = ctx.createRadialGradient(
-            -this.radius * 0.3, -this.radius * 0.3, 0,
-            0, 0, this.radius
-        );
-        gradient.addColorStop(0, this.color);
-// Replace the problematic line with:
-gradient.addColorStop(1, convertToRgba(this.color, 0.7));
-
-// Add this helper function
-function convertToRgba(color, alpha) {
-    if (color.startsWith('rgb(')) {
-        return color.replace('rgb(', 'rgba(').replace(')', `, ${alpha})`);
-    } else if (color.startsWith('#')) {
-        // Convert hex to rgba
-        const hex = color.replace('#', '');
-        const r = parseInt(hex.substr(0, 2), 16);
-        const g = parseInt(hex.substr(2, 2), 16);
-        const b = parseInt(hex.substr(4, 2), 16);
-        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-    }
-    return color; // Fallback
-}        
-        ctx.fillStyle = gradient;
+        ctx.arc(point.x + shakeX, point.y + shakeY, size, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
         ctx.fill();
-        
-        // Outer glow
-        ctx.beginPath();
-        ctx.arc(0, 0, this.radius + 3, 0, Math.PI * 2);
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-    // Draw muzzle flash
-        if (this.muzzleFlash > 0) {
-            ctx.save();
-            ctx.globalAlpha = this.muzzleFlash;
-            ctx.beginPath();
-            ctx.arc(
-                Math.cos(this.rotation) * this.radius, 
-                Math.sin(this.rotation) * this.radius, 
-                8 * this.muzzleFlash, 
-                0, 
-                Math.PI * 2
-            );
-            ctx.fillStyle = '#ffcc00';
-            ctx.fill();
-            ctx.restore();
-        }
-        
-        // Draw dash effect
-        if (this.dashEffect > 0) {
-            ctx.save();
-            ctx.globalAlpha = this.dashEffect * 0.3;
-            ctx.beginPath();
-            ctx.arc(0, 0, this.radius + 15 * this.dashEffect, 0, Math.PI * 2);
-            ctx.fillStyle = '#00ccff';
-            ctx.fill();
-            ctx.restore();
-        }
-        
-        // Draw hurt effect
-        if (this.hurtEffect > 0) {
-            ctx.save();
-            ctx.globalAlpha = this.hurtEffect * 0.5;
-            ctx.beginPath();
-            ctx.arc(0, 0, this.radius + 5, 0, Math.PI * 2);
-            ctx.fillStyle = '#ff0000';
-            ctx.fill();
-            ctx.restore();
-        }
-    }
-    // Draw player name
- ctx.fillStyle = '#ffffff';
-        ctx.font = '12px VT323';
-        ctx.textAlign = 'center';
-        ctx.fillText(this.name, 0, -this.radius - 15);
-        // Draw health bar
-        const barWidth = this.radius * 2;
-        const healthPercent = this.health / 100;
-        ctx.fillStyle = '#330000';
-        ctx.fillRect(-barWidth/2, -this.radius - 10, barWidth, 5);
-        ctx.fillStyle = '#00ff00';
-        ctx.fillRect(-barWidth/2, -this.radius - 10, barWidth * healthPercent, 5);
-
         ctx.restore();
     }
+
+    ctx.save();
+    ctx.translate(this.x + shakeX, this.y + shakeY);
+    ctx.rotate(this.rotation);
+
+    // Draw player body
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+    
+    // Create gradient
+    const gradient = ctx.createRadialGradient(
+        -this.radius * 0.3, -this.radius * 0.3, 0,
+        0, 0, this.radius
+    );
+    gradient.addColorStop(0, this.color);
+    gradient.addColorStop(1, convertToRgba(this.color, 0.7));
+    
+    ctx.fillStyle = gradient;
+    ctx.fill();
+    
+    // Outer glow
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius + 3, 0, Math.PI * 2);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Draw muzzle flash
+    if (this.muzzleFlash > 0) {
+        ctx.save();
+        ctx.globalAlpha = this.muzzleFlash;
+        ctx.beginPath();
+        ctx.arc(
+            Math.cos(this.rotation) * this.radius, 
+            Math.sin(this.rotation) * this.radius, 
+            8 * this.muzzleFlash, 
+            0, 
+            Math.PI * 2
+        );
+        ctx.fillStyle = '#ffcc00';
+        ctx.fill();
+        ctx.restore();
+    }
+    
+    // Draw dash effect
+    if (this.dashEffect > 0) {
+        ctx.save();
+        ctx.globalAlpha = this.dashEffect * 0.3;
+        ctx.beginPath();
+        ctx.arc(0, 0, this.radius + 15 * this.dashEffect, 0, Math.PI * 2);
+        ctx.fillStyle = '#00ccff';
+        ctx.fill();
+        ctx.restore();
+    }
+    
+    // Draw hurt effect
+    if (this.hurtEffect > 0) {
+        ctx.save();
+        ctx.globalAlpha = this.hurtEffect * 0.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, this.radius + 5, 0, Math.PI * 2);
+        ctx.fillStyle = '#ff0000';
+        ctx.fill();
+        ctx.restore();
+    }
+    
+    // Draw player name and health bar without rotation
+    ctx.save();
+    ctx.rotate(-this.rotation); // Counteract the player rotation
+    
+    // Draw player name
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '12px VT323';
+    ctx.textAlign = 'center';
+    ctx.fillText(this.name, 0, -this.radius - 15);
+    
+    // Draw health bar
+    const barWidth = this.radius * 2;
+    const healthPercent = this.health / 100;
+    ctx.fillStyle = '#330000';
+    ctx.fillRect(-barWidth/2, -this.radius - 10, barWidth, 5);
+    ctx.fillStyle = '#00ff00';
+    ctx.fillRect(-barWidth/2, -this.radius - 10, barWidth * healthPercent, 5);
+    
+    ctx.restore(); // Restore to rotated state
+    
+    ctx.restore(); // Restore to original state
 }
     class Ally {
         constructor(x, y, type) {
