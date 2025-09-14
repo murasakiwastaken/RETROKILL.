@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>RETROKILL: Remastered - Fixed Multiplayer</title>
+    <title>RETROKILL: Remastered</title>
     <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
@@ -1121,6 +1121,10 @@
                 <div class="modifier-title">HARD MODE</div>
                 <div class="modifier-desc">Enemies deal double damage</div>
             </div>
+            <div class="modifier-option" data-modifier="infinite-mode">
+                <div class="modifier-title">INFINITE MODE</div>
+                <div class="modifier-desc">Stages continue infinitely with increasing difficulty</div>
+            </div>
             <div class="modifiers-actions">
                 <div class="menu-option" id="modifiers-back">BACK</div>
                 <div class="menu-option" id="modifiers-confirm">CONFIRM</div>
@@ -1277,6 +1281,20 @@
             this.gameUnsubscribe = null;
             this.playersUnsubscribe = null;
             this.connectionStatus = 'disconnected';
+            this.gameState = {
+                enemies: [],
+                bloodDrops: [],
+                bullets: [],
+                grenades: [],
+                particles: [],
+                explosions: [],
+                obstacles: [],
+                stage: 1,
+                substage: 0,
+                difficulty: 1,
+                score: 0,
+                kills: 0
+            };
         }
         
         // Create a new game session
@@ -1309,6 +1327,7 @@
                     players: {
                         [playerId]: playerData
                     },
+                    gameState: this.gameState,
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
                 
@@ -1418,6 +1437,32 @@
                     initGame();
                 }
             }
+            
+            // Update game state if in multiplayer mode
+            if (multiplayerMode && gameData.gameState) {
+                this.gameState = gameData.gameState;
+                
+                // Sync game state if not the host
+                if (!isHost) {
+                    enemies = this.gameState.enemies;
+                    bloodDrops = this.gameState.bloodDrops;
+                    bullets = this.gameState.bullets;
+                    grenades = this.gameState.grenades;
+                    particles = this.gameState.particles;
+                    explosions = this.gameState.explosions;
+                    obstacles = this.gameState.obstacles;
+                    stage = this.gameState.stage;
+                    substage = this.gameState.substage;
+                    difficulty = this.gameState.difficulty;
+                    score = this.gameState.score;
+                    kills = this.gameState.kills;
+                    
+                    // Update UI
+                    scoreDisplay.textContent = `SCORE: ${score}`;
+                    killCount.textContent = kills;
+                    stageDisplay.textContent = `${stage}-${substage}`;
+                }
+            }
         }
         
         // Update player status in the game
@@ -1433,6 +1478,34 @@
                 });
             } catch (error) {
                 console.error("Error updating player status:", error);
+            }
+        }
+        
+        // Update game state (host only)
+        async updateGameState() {
+            if (!currentGameId || !isHost) return;
+            
+            try {
+                this.gameState = {
+                    enemies: enemies,
+                    bloodDrops: bloodDrops,
+                    bullets: bullets,
+                    grenades: grenades,
+                    particles: particles,
+                    explosions: explosions,
+                    obstacles: obstacles,
+                    stage: stage,
+                    substage: substage,
+                    difficulty: difficulty,
+                    score: score,
+                    kills: kills
+                };
+                
+                await db.collection('games').doc(currentGameId).update({
+                    gameState: this.gameState
+                });
+            } catch (error) {
+                console.error("Error updating game state:", error);
             }
         }
         
@@ -1474,7 +1547,7 @@
                 playerElement.className = 'player-item';
                 
                 playerElement.innerHTML = `
-                    <span class="player-name">${player.name || 'Unknown'} ${player.id === multiplayerManager.getHostId() ? '(Host)' : ''}</span>
+                    <span class="player-name">${player.name || 'Unknown'} ${player.id === this.getHostId() ? '(Host)' : ''}</span>
                     <span class="player-ready">${player.ready ? 'READY' : 'NOT READY'}</span>
                 `;
                 
@@ -1693,6 +1766,7 @@
     let buffTimer = 0;
     let infiniteMode = false;
     let playerReady = false;
+    let gameStateUpdateInterval = null;
 
     // Weapons
     const weapons = [
@@ -3241,7 +3315,7 @@
             for (let i = styleThresholds.length - 1; i >= 0; i--) {
                 if (stylePoints >= styleThresholds[i]) { newLevel = i; break; }
             }
-            styleLevel = newLevel;
+                        styleLevel = newLevel;
             styleMeter.textContent = styleRankings[styleLevel];
             const nextThreshold = styleLevel < styleThresholds.length - 1 ? styleThresholds[styleLevel + 1] : styleThresholds[styleLevel] * 2;
             const progress = styleLevel > 0 ? (stylePoints - styleThresholds[styleLevel]) / Math.max(1, (nextThreshold - styleThresholds[styleLevel])) : stylePoints / Math.max(1, nextThreshold);
@@ -3280,7 +3354,9 @@
                 stage = Math.floor(score / 1000) + 1;
             }
             
-            difficulty = 1 + (stage * 0.2);
+            // Scale difficulty based on player count in multiplayer
+            const playerCount = multiplayerMode ? Object.keys(multiplayerPlayers).length : 1;
+            difficulty = 1 + (stage * 0.2) + (playerCount * 0.2);
             
             // For stages beyond 5, use random enemy types from all available
             let enemyTypes;
@@ -3316,6 +3392,11 @@
             
             // Spawn timer based on difficulty
             enemySpawnTimer = Math.max(0.5, 2.0 - (stage * 0.2));
+            
+            // Update game state in multiplayer (host only)
+            if (multiplayerMode && isHost) {
+                multiplayerManager.updateGameState();
+            }
         }
     }
 
@@ -3326,6 +3407,11 @@
         const obstacleTypes = ['SPIKE', 'LASER', 'MINE'];
         const type = obstacleTypes[Math.floor(Math.random() * obstacleTypes.length)];
         obstacles.push(new Obstacle(type));
+        
+        // Update game state in multiplayer (host only)
+        if (multiplayerMode && isHost) {
+            multiplayerManager.updateGameState();
+        }
     }
 
     // Apply random buff
@@ -3401,6 +3487,11 @@
             // Every 10 kills but not 30, advance substage
             else if (kills % 10 === 0 && !infiniteMode) {
                 showSubstageSelection();
+            }
+            
+            // Update game state in multiplayer (host only)
+            if (multiplayerMode && isHost) {
+                multiplayerManager.updateGameState();
             }
         }
     }
@@ -3481,6 +3572,11 @@
         
         // Update stage display
         stageDisplay.textContent = `${stage}-${substage}`;
+        
+        // Update game state in multiplayer (host only)
+        if (multiplayerMode && isHost) {
+            multiplayerManager.updateGameState();
+        }
     }
 
     // Game over
@@ -3499,6 +3595,12 @@
             multiplayerManager.updatePlayerStatus({
                 alive: false
             });
+        }
+        
+        // Clear game state update interval
+        if (gameStateUpdateInterval) {
+            clearInterval(gameStateUpdateInterval);
+            gameStateUpdateInterval = null;
         }
     }
 
@@ -3556,6 +3658,13 @@
 
         if (styleTimeout) clearTimeout(styleTimeout);
         startStyleDecay();
+        
+        // Start game state updates for multiplayer host
+        if (multiplayerMode && isHost) {
+            gameStateUpdateInterval = setInterval(() => {
+                multiplayerManager.updateGameState();
+            }, 1000); // Update every second
+        }
     }
 
     // Draw function
@@ -4099,7 +4208,7 @@
             const angle = (i / 5) * Math.PI * 2 + time;
             const radius = 100;
             const x = playerX + Math.cos(angle) * radius;
-            const y = playerY + Math.sin(angle) * radius;
+                       const y = playerY + Math.sin(angle) * radius;
             const size = 10 + Math.sin(time + i) * 3;
             
             menuCtx.fillStyle = i % 2 === 0 ? '#6666ff' : '#ff3333';
